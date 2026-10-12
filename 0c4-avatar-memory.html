@@ -129,20 +129,41 @@ function speak(t,reply){
  setState('TALK','音声で返答中');
  avatar.classList.add('mouthPulse');
  if(!('speechSynthesis' in window)){finish(t,'音声読み上げ非対応');return;}
- const u=new SpeechSynthesisUtterance(reply);
- u.lang='ja-JP';u.rate=1;u.pitch=1.1;
- const ja=window.speechSynthesis.getVoices().find(v=>v.lang.toLowerCase().startsWith('ja'));
- if(ja)u.voice=ja;
- u.onend=()=>finish(t,'返答完了。もう一度話せます');
- u.onerror=(e)=>finish(t,'読み上げエラー: '+(e?.error||'unknown'));
- voice=u;
- window.speechSynthesis.cancel();
- // Android Chromeでcancel直後のspeakが失敗する場合があるため少し間を空ける。
- setTimeout(()=>{
+
+ const synth=window.speechSynthesis;
+ let retried=false;
+
+ const run=()=>{
   if(t!==token)return;
-  try{window.speechSynthesis.resume();}catch(e){}
-  window.speechSynthesis.speak(u);
- },120);
+  const u=new SpeechSynthesisUtterance(reply);
+  // Androidではvoice明示指定が不安定な場合があるため、まずOS既定音声に任せる。
+  u.lang='ja-JP';
+  u.rate=1;
+  u.pitch=1;
+  u.volume=1;
+  u.onend=()=>finish(t,'返答完了。もう一度話せます');
+  u.onerror=(e)=>{
+   const err=e?.error||'unknown';
+   if(!retried && err==='synthesis-failed'){
+    retried=true;
+    setState('TALK','読み上げ再試行中');
+    try{synth.cancel();}catch(_){}
+    setTimeout(()=>{
+      if(t!==token)return;
+      try{synth.resume();}catch(_){}
+      run();
+    },350);
+    return;
+   }
+   finish(t,'読み上げエラー: '+err);
+  };
+  voice=u;
+  try{synth.resume();}catch(_){}
+  synth.speak(u);
+ };
+
+ // speak直前のcancelは行わない。停止ボタン時だけcancelする。
+ setTimeout(run,80);
 }
 function begin(){
  if(active)return;
