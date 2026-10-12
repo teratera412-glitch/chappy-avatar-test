@@ -92,7 +92,12 @@ async function respond(words){
  });
  let data={};
  try{data=await res.json();}catch(e){}
- if(!res.ok)throw new Error(data.error||('HTTP '+res.status));
+ if(!res.ok){
+  const parts=[data.error||('HTTP '+res.status)];
+  if(data.status)parts.push('HTTP '+data.status);
+  if(typeof data.detail==='string'&&data.detail.trim())parts.push(data.detail.trim());
+  throw new Error(parts.join(' / '));
+ }
  if(typeof data.reply!=='string'||!data.reply.trim())throw new Error('EMPTY_REPLY');
  return data.reply.trim();
 }
