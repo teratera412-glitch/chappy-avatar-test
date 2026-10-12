@@ -134,10 +134,15 @@ function speak(t,reply){
  const ja=window.speechSynthesis.getVoices().find(v=>v.lang.toLowerCase().startsWith('ja'));
  if(ja)u.voice=ja;
  u.onend=()=>finish(t,'返答完了。もう一度話せます');
- u.onerror=()=>finish(t,'読み上げエラー');
+ u.onerror=(e)=>finish(t,'読み上げエラー: '+(e?.error||'unknown'));
  voice=u;
  window.speechSynthesis.cancel();
- window.speechSynthesis.speak(u);
+ // Android Chromeでcancel直後のspeakが失敗する場合があるため少し間を空ける。
+ setTimeout(()=>{
+  if(t!==token)return;
+  try{window.speechSynthesis.resume();}catch(e){}
+  window.speechSynthesis.speak(u);
+ },120);
 }
 function begin(){
  if(active)return;
