@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CHAPPY × Miko Brain Test</title>
+<script src="https://cdn.jsdelivr.net/npm/mesh-avatar-element@0/dist/standalone.js"></script>
+<style>
+*{box-sizing:border-box}body{font-family:system-ui,sans-serif;background:#10141d;color:#f5f7fc;margin:0}main{max-width:620px;margin:auto;padding:16px}h1{font-size:22px}small,.sub{color:#aeb8ca}.stage{height:min(64vh,510px);background:#202634;border-radius:18px;overflow:hidden;display:grid;place-items:center}mesh-avatar{display:block;width:100%;height:100%}button,textarea{font:inherit;border-radius:10px;padding:12px}button{background:#384d70;color:white;border:1px solid #657a9b;margin:4px 4px 4px 0}button:disabled{opacity:.4}textarea{width:100%;min-height:70px;background:#202634;color:white;border:1px solid #596b83}.panel{background:#1a2230;padding:13px;border-radius:14px;margin-top:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere}#status{color:#a8d8ff}
+</style></head><body><main>
+<h1>CHAPPY Brain × Miko 🧪</h1><p class="sub">既存Workerは変更しません。マイクとテキストの両方で試せます。</p>
+<div class="stage"><mesh-avatar id="miko" src="https://shinshin86.github.io/mesh-avatar-studio/miko.mavatar" auto-idle></mesh-avatar></div>
+<div class="panel"><div id="status">Miko読み込み中…</div>
+<button id="mic">🎤 話しかける</button><button id="stop">⏹ 停止</button><button id="demo">🔊 音声テスト</button>
+<textarea id="input" maxlength="500" placeholder="文字で質問してもOK">こんにちは！あなたは誰？</textarea>
+<button id="send">📨 Geminiに送信</button><button id="reset">履歴クリア</button>
+<p><small>認識した言葉</small></p><pre id="heard">（まだありません）</pre><p><small>Geminiの返答</small></p><pre id="reply">（まだありません）</pre>
+<p><small>動作ログ</small></p><pre id="log">待機中</pre></div>
+</main><script>
+const $=id=>document.getElementById(id),el=$('miko'),synth=window.speechSynthesis;
+const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+const history=[];let recognition=null,token=0,busy=false,avatar=null,mouthTimer=null;
+const log=m=>{$('log').textContent=new Date().toLocaleTimeString()+' '+m+'\n'+$('log').textContent.slice(0,1700)};
+const status=m=>$('status').textContent=m;
+const expression=e=>{try{avatar?.setExpression(e)}catch(err){log('表情: '+err.message)}};
+function mouth(on){clearInterval(mouthTimer);try{avatar?.setSpeaking(on);avatar?.setVoiceLevel(on?.25:0)}catch(e){}if(on){let i=0;mouthTimer=setInterval(()=>{try{avatar?.setVoiceLevel(.25+.55*Math.abs(Math.sin(i++*.75)))}catch(e){}},110)}}
+function idle(m){busy=false;$('send').disabled=false;$('mic').disabled=false;mouth(false);expression('neutral');status(m)}
+async function ready(){try{await el.ready;avatar=el.avatar;if(!avatar)throw Error('avatar API unavailable');avatar.setAutoIdle(true);idle('Miko準備完了');log('Miko ready')}catch(e){status('Miko読込失敗: '+e.message);log(e.message)}}
+ready();
+function stop(){++token;try{recognition?.abort()}catch(e){}recognition=null;try{synth?.cancel()}catch(e){}idle('停止しました')}
+async function ask(message){
+ if(busy)return;message=message.trim();if(!message)return;
+ const t=++token;busy=true;$('send').disabled=true;$('mic').disabled=true;
+ $('heard').textContent=message;status('Geminiへ問い合わせ中…');expression('neutral');log('送信開始');
+ try{
+ const res=await fetch('https://chappy-brain-test.teratera412.workers.dev/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,history})});
+ const data=await res.json();if(!res.ok)throw Error(data.error+' / '+(data.detail||res.status));
+ if(typeof data.reply!=='string'||!data.reply.trim())throw Error('返答が空です');
+ if(t!==token)return;
+ const reply=data.reply.trim();$('reply').textContent=reply;
+ history.push({role:'user',text:message},{role:'assistant',text:reply});while(history.length>6)history.shift();
+ log('Gemini応答取得');speak(t,reply);
+ }catch(e){if(t===token){log('通信エラー: '+e.message);idle('通信エラー: '+e.message)}}
+}
+function speak(t,text){
+ if(!synth){idle('音声合成非対応');return}
+ status('読み上げ準備中…');
+ let retried=false;
+ const run=()=>{
+ if(t!==token)return;
+ const u=new SpeechSynthesisUtterance(text);u.lang='ja-JP';u.rate=1;u.pitch=1;
+ u.onstart=()=>{if(t!==token)return;status('Mikoが話しています');expression('smile');mouth(true);log('TTS開始')};
+ u.onend=()=>{if(t===token){log('TTS終了');idle('返答完了')}};
+ u.onerror=e=>{if(t!==token)return;const err=e.error||'unknown';mouth(false);if(err==='synthesis-failed'&&!retried){retried=true;log('TTS再試行');try{synth.cancel()}catch(_){}setTimeout(()=>{try{synth.resume()}catch(_){}run()},350)}else{log('TTSエラー: '+err);idle('TTSエラー: '+err)}};
+ try{synth.resume();synth.speak(u)}catch(e){idle('TTS例外: '+e.message)}
+ };
+ setTimeout(run,80);
+}
+$('send').onclick=()=>ask($('input').value);
+$('mic').onclick=()=>{
+ if(busy)return;if(!Recognition){status('このブラウザは音声認識非対応です');return}
+ const rec=new Recognition();recognition=rec;rec.lang='ja-JP';rec.continuous=false;rec.interimResults=false;
+ let got=false;status('聞いています…');log('マイク開始');
+ rec.onresult=e=>{got=true;const words=e.results[0][0].transcript.trim();$('input').value=words;ask(words)};
+ rec.onerror=e=>{if(!got)status('音声認識エラー: '+e.error)};
+ rec.onend=()=>{if(!got&&!busy)status('聞き取り終了')};
+ try{rec.start()}catch(e){status('マイク起動失敗: '+e.message)}
+};
+$('stop').onclick=stop;
+$('demo').onclick=()=>{stop();busy=true;$('send').disabled=true;$('mic').disabled=true;speak(token,'こんにちは。チャッピーの音声テストです。')};
+$('reset').onclick=()=>{history.length=0;log('履歴をクリアしました')};
+</script></body></html>
