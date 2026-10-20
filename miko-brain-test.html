@@ -3,27 +3,51 @@
 <title>CHAPPY × Miko Brain Test</title>
 <script type="module" src="https://cdn.jsdelivr.net/npm/mesh-avatar-element@0/dist/standalone.js"></script>
 <style>
-*{box-sizing:border-box}body{font-family:system-ui,sans-serif;background:#10141d;color:#f5f7fc;margin:0}main{max-width:620px;margin:auto;padding:16px}h1{font-size:22px}small,.sub{color:#aeb8ca}.stage{height:min(64vh,510px);background:#202634;border-radius:18px;overflow:hidden;display:grid;place-items:center}mesh-avatar{display:block;width:100%;height:100%}button,textarea{font:inherit;border-radius:10px;padding:12px}button{background:#384d70;color:white;border:1px solid #657a9b;margin:4px 4px 4px 0}button:disabled{opacity:.4}textarea{width:100%;min-height:70px;background:#202634;color:white;border:1px solid #596b83}.panel{background:#1a2230;padding:13px;border-radius:14px;margin-top:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere}#status{color:#a8d8ff}
+*{box-sizing:border-box}body{font-family:system-ui,sans-serif;background:#10141d;color:#f5f7fc;margin:0}main{max-width:620px;margin:auto;padding:16px}h1{font-size:22px}small,.sub{color:#aeb8ca}.stage{height:min(64vh,510px);background:#202634;border-radius:18px;overflow:hidden;display:grid;place-items:center}mesh-avatar{display:block;width:100%;aspect-ratio:1/1}button,textarea{font:inherit;border-radius:10px;padding:12px}button{background:#384d70;color:white;border:1px solid #657a9b;margin:4px 4px 4px 0}button:disabled{opacity:.4}textarea{width:100%;min-height:70px;background:#202634;color:white;border:1px solid #596b83}.panel{background:#1a2230;padding:13px;border-radius:14px;margin-top:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere}#status{color:#a8d8ff}
 </style></head><body><main>
-<h1>CHAPPY Brain × Miko 🧪</h1><p class="sub">既存Workerは変更しません。マイクとテキストの両方で試せます。</p>
-<div class="stage"><mesh-avatar id="miko" src="https://shinshin86.github.io/mesh-avatar-studio/miko.mavatar" auto-idle></mesh-avatar></div>
-<div class="panel"><div id="status">Miko読み込み中…</div>
+<h1>CHAPPY Brain × Miko 🧪</h1><p class="sub">既存Workerは変更しません。マイクとテキストの両方で試せます。</p><p style="color:#f9c779;font-size:13px"><strong>診断版 r3</strong> | Mikoの初期化方式を単独成功版と統一</p>
+<div class="stage"><mesh-avatar id="miko" label="Miko sample avatar"></mesh-avatar></div>
+<div class="panel"><div id="status">診断版r3: Miko読み込み中…</div>
 <button id="mic">🎤 話しかける</button><button id="stop">⏹ 停止</button><button id="demo">🔊 音声テスト</button>
 <textarea id="input" maxlength="500" placeholder="文字で質問してもOK">こんにちは！あなたは誰？</textarea>
 <button id="send">📨 Geminiに送信</button><button id="reset">履歴クリア</button>
 <p><small>認識した言葉</small></p><pre id="heard">（まだありません）</pre><p><small>Geminiの返答</small></p><pre id="reply">（まだありません）</pre>
 <p><small>動作ログ</small></p><pre id="log">待機中</pre></div>
-</main><script>
+</main><script type="module">
 const $=id=>document.getElementById(id),el=$('miko'),synth=window.speechSynthesis;
 const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 const history=[];let recognition=null,token=0,busy=false,avatar=null,mouthTimer=null;
 const log=m=>{$('log').textContent=new Date().toLocaleTimeString()+' '+m+'\n'+$('log').textContent.slice(0,1700)};
 const status=m=>$('status').textContent=m;
 const expression=e=>{try{avatar?.setExpression(e)}catch(err){log('表情: '+err.message)}};
-function mouth(on){clearInterval(mouthTimer);try{avatar?.setSpeaking(on);avatar?.setVoiceLevel(on?.25:0)}catch(e){}if(on){let i=0;mouthTimer=setInterval(()=>{try{avatar?.setVoiceLevel(.25+.55*Math.abs(Math.sin(i++*.75)))}catch(e){}},110)}}
+function mouth(on){clearInterval(mouthTimer);try{avatar?.setSpeaking(on);avatar?.setVoiceLevel(on ? 0.25 : 0)}catch(e){}if(on){let i=0;mouthTimer=setInterval(()=>{try{avatar?.setVoiceLevel(.25+.55*Math.abs(Math.sin(i++*.75)))}catch(e){}},110)}}
 function idle(m){busy=false;$('send').disabled=false;$('mic').disabled=false;mouth(false);expression('neutral');status(m)}
-async function ready(){try{await customElements.whenDefined("mesh-avatar");avatar=await el.ready;if(!avatar)throw Error('avatar API unavailable');avatar.setAutoIdle(true);idle('Miko準備完了');log('Miko ready')}catch(e){status('Miko読込失敗: '+e.message);log(e.message)}}
-ready();
+function avatarLoaded(a,from){
+ if(avatar)return;
+ if(!a){log('読み込み通知は届いたがruntime APIが未取得: '+from);return}
+ avatar=a;
+ try{avatar.setAutoIdle(true)}catch(e){log('idle設定: '+e.message)}
+ idle('✅ Miko準備完了 (r3)');
+ log('Miko表示成功: '+from);
+}
+el.addEventListener('load',e=>avatarLoaded(e.detail?.avatar || el.avatar,'loadイベント'));
+el.addEventListener('error',e=>{
+ const detail=String(e.detail?.error?.message||e.detail?.error||'不明');
+ status('❌ Mikoのデータ読み込み失敗: '+detail);
+ log('Miko errorイベント: '+detail);
+});
+log('診断版r3 実行開始');
+customElements.whenDefined('mesh-avatar')
+ .then(()=>{log('mesh-avatar登録完了');return el.ready})
+ .then(a=>avatarLoaded(a || el.avatar,'ready'))
+ .catch(e=>{const msg=String(e?.message||e);status('❌ Miko初期化エラー: '+msg);log('Miko ready失敗: '+msg)});
+setTimeout(()=>{
+ if(avatar)return;
+ const defined=Boolean(customElements.get('mesh-avatar'));
+ const tag=el.tagName.toLowerCase();
+ const msg='診断: 12秒経過 / 部品登録='+defined+' / タグ='+tag+' / runtime取得='+Boolean(el.avatar);
+ status(msg);log(msg);
+},12000);
 function stop(){++token;try{recognition?.abort()}catch(e){}recognition=null;try{synth?.cancel()}catch(e){}idle('停止しました')}
 async function ask(message){
  if(busy)return;message=message.trim();if(!message)return;
